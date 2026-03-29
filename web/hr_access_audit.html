@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Crossover System — HR Access Audit</title>
+<style>
+  :root { --bg:#0d0f14; --surface:#161921; --border:#2a3045; --accent:#4f8ef7; --keep:#2dd98f; --delete:#f75252; --text:#e2e8f8; --muted:#6b7a99; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family: Inter, Arial, sans-serif; background:var(--bg); color:var(--text); }
+  .container { max-width:1100px; margin:24px auto; padding:0 20px; }
+  .toolbar { display:flex; gap:10px; margin:18px 0; flex-wrap:wrap; }
+  .btn { padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+  .btn-export { border-color:var(--accent); color:var(--accent); }
+  .btn-import { border-color:#7f8cff; color:#b6bfff; }
+  input[type="text"] { flex:1; min-width:220px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); }
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:10px; border-bottom:1px solid var(--border); text-align:left; font-size:14px; }
+  .pill { border-radius:999px; padding:4px 8px; font-size:12px; font-weight:600; }
+  .KEEP { background:rgba(45,217,143,.2); color:var(--keep); }
+  .DELETE { background:rgba(247,82,82,.2); color:var(--delete); }
+  .muted { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Crossover System — HR Access Audit</h1>
+    <p class="muted">Now includes an <strong>Import List</strong> button for CSV upload.</p>
+
+    <div class="toolbar">
+      <input id="searchInput" type="text" placeholder="Search EID or name..." />
+      <button class="btn" onclick="setFilter('ALL')">All</button>
+      <button class="btn" onclick="setFilter('KEEP')">✅ Keep</button>
+      <button class="btn" onclick="setFilter('DELETE')">❌ Delete</button>
+      <button class="btn btn-import" onclick="triggerImport()">↑ Import List</button>
+      <button class="btn btn-export" onclick="exportCSV()">↓ Export CSV</button>
+      <input id="importInput" type="file" accept=".csv,text/csv" style="display:none" />
+    </div>
+
+    <p id="importMessage" class="muted"></p>
+
+    <table>
+      <thead>
+        <tr><th>EID</th><th>Last Name</th><th>First Name</th><th>Department</th><th>Status</th></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+<script>
+const DATA = {
+  Opera: [
+    { eid:'AMAHT175', lastName:'MAHTOUT', firstName:'Abdelouhab', department:'General and Admin', status:'KEEP' },
+    { eid:'MIGHI453', lastName:'', firstName:'', department:'', status:'DELETE' }
+  ]
+};
+
+let currentSys = 'Opera';
+let currentFilter = 'ALL';
+let searchQ = '';
+
+function normalizedStatus(v) {
+  return String(v || '').trim().toUpperCase() === 'DELETE' ? 'DELETE' : 'KEEP';
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const [headerLine, ...body] = lines;
+  const headers = headerLine.split(',').map(h => h.trim().toLowerCase());
+  const idx = {
+    eid: headers.indexOf('eid'),
+    lastName: headers.indexOf('last name'),
+    firstName: headers.indexOf('first name'),
+    department: headers.indexOf('department'),
+    status: headers.indexOf('status')
+  };
+
+  return body.map(line => {
+    const cols = line.split(',').map(s => s.trim());
+    return {
+      eid: cols[idx.eid] || '',
+      lastName: cols[idx.lastName] || '',
+      firstName: cols[idx.firstName] || '',
+      department: cols[idx.department] || '',
+      status: normalizedStatus(cols[idx.status])
+    };
+  }).filter(r => r.eid);
+}
+
+function triggerImport() {
+  document.getElementById('importInput').click();
+}
+
+document.getElementById('importInput').addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const rows = parseCSV(String(evt.target?.result || ''));
+      if (!rows.length) {
+        document.getElementById('importMessage').textContent = 'Import failed: no valid rows found.';
+        return;
+      }
+      DATA[currentSys] = rows;
+      document.getElementById('importMessage').textContent = `Imported ${rows.length} row(s) into ${currentSys}.`;
+      render();
+    } catch (err) {
+      document.getElementById('importMessage').textContent = `Import failed: ${err.message}`;
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+function setFilter(f) { currentFilter = f; render(); }
+
+document.getElementById('searchInput').addEventListener('input', e => { searchQ = e.target.value.toLowerCase(); render(); });
+
+function render() {
+  let rows = DATA[currentSys] || [];
+  if (currentFilter !== 'ALL') rows = rows.filter(r => r.status === currentFilter);
+  if (searchQ) rows = rows.filter(r => (`${r.eid} ${r.lastName} ${r.firstName} ${r.department}`).toLowerCase().includes(searchQ));
+
+  document.getElementById('tableBody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.eid}</td>
+      <td>${r.lastName || '—'}</td>
+      <td>${r.firstName || '—'}</td>
+      <td>${r.department || 'Not in HR'}</td>
+      <td><span class="pill ${r.status}">${r.status}</span></td>
+    </tr>
+  `).join('');
+}
+
+function exportCSV() {
+  let rows = DATA[currentSys] || [];
+  if (currentFilter !== 'ALL') rows = rows.filter(r => r.status === currentFilter);
+  if (searchQ) rows = rows.filter(r => (`${r.eid} ${r.lastName} ${r.firstName} ${r.department}`).toLowerCase().includes(searchQ));
+  const header = 'EID,Last Name,First Name,Department,Status';
+  const body = rows.map(r => [r.eid, r.lastName, r.firstName, r.department, r.status].join(',')).join('\n');
+  const blob = new Blob([header + '\n' + body], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${currentSys}_audit.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+render();
+</script>
+</body>
+</html>
